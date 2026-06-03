@@ -1,0 +1,6 @@
+{
+  "name": "Max星际先锋",
+  "description": "一款精致炫酷的HTML5 Canvas太空战机射击游戏，支持多型敌机、升级道具、关卡机制以及成就系统。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
