@@ -7,7 +7,7 @@ export interface Achievement {
   conditionText: string;
 }
 
-export type EnemyType = 'basic' | 'fast' | 'heavy' | 'elite' | 'boss';
+export type EnemyType = 'basic' | 'fast' | 'heavy' | 'elite' | 'boss' | 'scout' | 'bomber';
 
 export interface Enemy {
   id: string;

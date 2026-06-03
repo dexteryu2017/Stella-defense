@@ -71,6 +71,8 @@ export const SpaceCanvas: React.FC<SpaceCanvasProps> = ({
     enemy_fast: HTMLImageElement | HTMLCanvasElement | null;
     enemy_heavy: HTMLImageElement | HTMLCanvasElement | null;
     enemy_elite: HTMLImageElement | HTMLCanvasElement | null;
+    enemy_scout: HTMLImageElement | HTMLCanvasElement | null;
+    enemy_bomber: HTMLImageElement | HTMLCanvasElement | null;
     enemy_boss: HTMLImageElement | HTMLCanvasElement | null;
   }>({
     player: null,
@@ -78,6 +80,8 @@ export const SpaceCanvas: React.FC<SpaceCanvasProps> = ({
     enemy_fast: null,
     enemy_heavy: null,
     enemy_elite: null,
+    enemy_scout: null,
+    enemy_bomber: null,
     enemy_boss: null,
   });
 
@@ -89,6 +93,8 @@ export const SpaceCanvas: React.FC<SpaceCanvasProps> = ({
       enemy_fast: '/assets/enemy_fast.png',
       enemy_heavy: '/assets/enemy_heavy.png',
       enemy_elite: '/assets/enemy_elite.png',
+      enemy_scout: '/assets/enemy_scout.png',
+      enemy_bomber: '/assets/enemy_bomber.png',
       enemy_boss: '/assets/enemy_boss.png',
     };
 
@@ -103,20 +109,36 @@ export const SpaceCanvas: React.FC<SpaceCanvasProps> = ({
         ctx.drawImage(img, 0, 0);
         const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const data = imgData.data;
+
+        // Get corner pixel color as reference background color for dynamic chroma-keying
+        const refR = data[0];
+        const refG = data[1];
+        const refB = data[2];
+        const refA = data[3];
+
+        // If the corner pixel is already transparent, no keying is needed
+        if (refA < 50) {
+          return img;
+        }
+
+        const threshold = 40; // Max color difference margin for compression artifacts
         for (let i = 0; i < data.length; i += 4) {
           const r = data[i];
           const g = data[i + 1];
           const b = data[i + 2];
-          // If the pixel is near-black (R, G, B each < 25) OR near-white (R, G, B each > 235), make it fully transparent
-          const isNearBlack = r < 25 && g < 25 && b < 25;
-          const isNearWhite = r > 235 && g > 235 && b > 235;
-          if (isNearBlack || isNearWhite) {
-            data[i + 3] = 0;
+
+          const diffR = Math.abs(r - refR);
+          const diffG = Math.abs(g - refG);
+          const diffB = Math.abs(b - refB);
+
+          if (diffR < threshold && diffG < threshold && diffB < threshold) {
+            data[i + 3] = 0; // Transparent
           }
         }
         ctx.putImageData(imgData, 0, 0);
         return canvas;
-      } catch {
+      } catch (err) {
+        console.error("Failed chroma-key preprocessing:", err);
         return img;
       }
     };
@@ -418,6 +440,37 @@ export const SpaceCanvas: React.FC<SpaceCanvasProps> = ({
         enemy.y += enemy.speed * (dt / 13);
         enemy.x += Math.sin(enemy.angle) * 0.8 * (dt / 13);
         enemy.angle += 0.01 * (dt / 13);
+      } else if (enemy.type === 'elite') {
+        // Elite fighters slide in high-amplitude elegant lateral S-curves
+        enemy.y += enemy.speed * (dt / 13);
+        enemy.x += Math.sin(enemy.angle) * 2.5 * (dt / 13);
+        enemy.angle += 0.05 * (dt / 13);
+
+        // Elite firing patterns: shoots occasional double angled streams
+        if (Math.random() < 0.012 && stats.gameStarted) {
+          spawnEnemyBullet(enemy.x - 12, enemy.y + 15, -0.6, 3.6, '#d946ef');
+          spawnEnemyBullet(enemy.x + 12, enemy.y + 15, 0.6, 3.6, '#d946ef');
+        }
+      } else if (enemy.type === 'scout') {
+        // Scout ships zip extremely fast side-to-side in a tight, rapid wave
+        enemy.y += enemy.speed * (dt / 13);
+        enemy.x += Math.cos(enemy.angle) * 4.0 * (dt / 13);
+        enemy.angle += 0.12 * (dt / 13);
+
+        // Single high-speed sniper laser
+        if (Math.random() < 0.009 && stats.gameStarted) {
+          spawnEnemyBullet(enemy.x, enemy.y + 12, 0, 5.5, '#06b6d4');
+        }
+      } else if (enemy.type === 'bomber') {
+        // Heavy bombers slide slowly downwards and fire a big heavy blast
+        enemy.y += enemy.speed * (dt / 13);
+        enemy.x += Math.sin(enemy.angle) * 0.3 * (dt / 13);
+        enemy.angle += 0.008 * (dt / 13);
+
+        // Heavy plasma mortar fire
+        if (Math.random() < 0.015 && stats.gameStarted) {
+          spawnEnemyBullet(enemy.x, enemy.y + 24, 0, 2.5, '#e11d48');
+        }
       } else if (enemy.type === 'boss') {
         // Elite carrier moves in weaving s-shape patterns and stops at top-third coordinates
         if (enemy.y < 160) {
@@ -653,35 +706,46 @@ export const SpaceCanvas: React.FC<SpaceCanvasProps> = ({
   const spawnEnemy = () => {
     const state = gameStateRef.current;
     
-    // Choose enemy type based on weights and level (5 distinct types of enemy aircraft!)
+    // Choose enemy type based on weights and level (7 distinct types of tactical enemy aircraft!)
     let type: EnemyType = 'basic';
     const rand = Math.random();
 
     if (stats.level >= 4) {
       const bossExists = state.enemies.some(e => e.type === 'boss');
-      if (!bossExists && rand < 0.08) {
+      if (!bossExists && rand < 0.07) {
         type = 'boss';
-      } else if (rand < 0.23) {
-        type = 'elite'; // 5th Elite type!
-      } else if (rand < 0.43) {
-        type = 'heavy';
-      } else if (rand < 0.70) {
-        type = 'fast';
+      } else if (rand < 0.17) {
+        type = 'elite'; // Slithering elite fighter
+      } else if (rand < 0.31) {
+        type = 'bomber'; // Heavy fortress bomber
+      } else if (rand < 0.46) {
+        type = 'heavy'; // Heavy cruiser
+      } else if (rand < 0.61) {
+        type = 'scout'; // Nimble tactical scout
+      } else if (rand < 0.81) {
+        type = 'fast'; // Swift interceptor
       } else {
         type = 'basic';
       }
     } else if (stats.level === 3) {
-      if (rand < 0.25) type = 'heavy';
-      else if (rand < 0.60) type = 'fast';
+      if (rand < 0.12) type = 'bomber';
+      else if (rand < 0.32) type = 'heavy';
+      else if (rand < 0.52) type = 'scout';
+      else if (rand < 0.72) type = 'fast';
       else type = 'basic';
     } else if (stats.level === 2) {
-      if (rand < 0.35) type = 'fast';
+      if (rand < 0.20) type = 'scout';
+      else if (rand < 0.50) type = 'fast';
+      else type = 'basic';
+    } else {
+      // Level 1: Introduce occasional nimble scout
+      if (rand < 0.12) type = 'scout';
       else type = 'basic';
     }
 
     let width = 36;
     let height = 36;
-    let color = '#facc15'; // yellow
+    let color = '#facc15'; // yellow basic
     let speed = Math.random() * 1.5 + 1.2;
     let hp = 1;
     let scoreValue = 100;
@@ -707,6 +771,20 @@ export const SpaceCanvas: React.FC<SpaceCanvasProps> = ({
       speed = Math.random() * 0.7 + 1.8; // medium speed with slithering motion
       hp = 4;
       scoreValue = 450;
+    } else if (type === 'scout') {
+      width = 30;
+      height = 30;
+      color = '#06b6d4'; // bright glowing electric cyan
+      speed = Math.random() * 1.5 + 4.2; // extremely fast and nimble
+      hp = 1;
+      scoreValue = 200;
+    } else if (type === 'bomber') {
+      width = 58;
+      height = 54;
+      color = '#e11d48'; // heavy tactical crimson
+      speed = Math.random() * 0.3 + 0.8; // heavy armored bomber movement
+      hp = 6;
+      scoreValue = 500;
     } else if (type === 'boss') {
       width = 80;
       height = 70;
@@ -1122,10 +1200,12 @@ export const SpaceCanvas: React.FC<SpaceCanvasProps> = ({
       ctx.fill();
 
       // Check if custom png visual has been uploaded in local workspace
-      let assetKey: 'enemy_base' | 'enemy_fast' | 'enemy_heavy' | 'enemy_elite' | 'enemy_boss' = 'enemy_base';
+      let assetKey: 'enemy_base' | 'enemy_fast' | 'enemy_heavy' | 'enemy_elite' | 'enemy_scout' | 'enemy_bomber' | 'enemy_boss' = 'enemy_base';
       if (enemy.type === 'fast') assetKey = 'enemy_fast';
       else if (enemy.type === 'heavy') assetKey = 'enemy_heavy';
       else if (enemy.type === 'elite') assetKey = 'enemy_elite';
+      else if (enemy.type === 'scout') assetKey = 'enemy_scout';
+      else if (enemy.type === 'bomber') assetKey = 'enemy_bomber';
       else if (enemy.type === 'boss') assetKey = 'enemy_boss';
 
       const customImg = imageAssetsRef.current[assetKey];
@@ -1136,7 +1216,7 @@ export const SpaceCanvas: React.FC<SpaceCanvasProps> = ({
         ctx.drawImage(customImg, -enemy.width / 2, -enemy.height / 2, enemy.width, enemy.height);
 
         // Sub HP bar indicators and overlays still render beautifully over the PNG
-        if (enemy.type === 'heavy' || enemy.type === 'elite') {
+        if (enemy.type === 'heavy' || enemy.type === 'elite' || enemy.type === 'bomber') {
           ctx.restore();
           ctx.save();
           const barWidth = 32;
@@ -1144,7 +1224,12 @@ export const SpaceCanvas: React.FC<SpaceCanvasProps> = ({
           const hpPercent = enemy.hp / enemy.maxHp;
           ctx.fillStyle = '#374151';
           ctx.fillRect(enemy.x - barWidth / 2, enemy.y + enemy.height / 2 + 8, barWidth, barHeight);
-          ctx.fillStyle = enemy.type === 'elite' ? '#d946ef' : '#10b981';
+          
+          let hpColor = '#10b981'; // green for heavy
+          if (enemy.type === 'elite') hpColor = '#d946ef'; // magenta
+          else if (enemy.type === 'bomber') hpColor = '#e11d48'; // crimson red
+          
+          ctx.fillStyle = hpColor;
           ctx.fillRect(enemy.x - barWidth / 2, enemy.y + enemy.height / 2 + 8, barWidth * hpPercent, barHeight);
         } else if (enemy.type === 'boss') {
           ctx.fillStyle = 'rgba(239, 68, 68, 0.4)';
@@ -1228,6 +1313,42 @@ export const SpaceCanvas: React.FC<SpaceCanvasProps> = ({
           ctx.fillRect(enemy.x - barWidth / 2, enemy.y + enemy.height / 2 + 8, barWidth, barHeight);
           ctx.fillStyle = '#d946ef';
           ctx.fillRect(enemy.x - barWidth / 2, enemy.y + enemy.height / 2 + 8, barWidth * hpPercent, barHeight);
+        } else if (enemy.type === 'scout') {
+          // Nimble forward-swept wing probe design (glowing cyan outline)
+          ctx.beginPath();
+          ctx.moveTo(0, enemy.height / 2.2); // nose
+          ctx.lineTo(-enemy.width / 2, -enemy.height / 6); // wingtip L
+          ctx.lineTo(-enemy.width / 4, -enemy.height / 2); // tail L
+          ctx.lineTo(0, -enemy.height / 4); // inner engine node
+          ctx.lineTo(enemy.width / 4, -enemy.height / 2); // tail R
+          ctx.lineTo(enemy.width / 2, -enemy.height / 6); // wingtip R
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        } else if (enemy.type === 'bomber') {
+          // Giant armored strategic bomber layout
+          ctx.beginPath();
+          ctx.moveTo(0, enemy.height / 1.8);
+          ctx.lineTo(-enemy.width / 2, enemy.height / 4);
+          ctx.lineTo(-enemy.width / 2, -enemy.height / 3);
+          ctx.lineTo(-enemy.width / 3, -enemy.height / 2);
+          ctx.lineTo(enemy.width / 3, -enemy.height / 2);
+          ctx.lineTo(enemy.width / 2, -enemy.height / 3);
+          ctx.lineTo(enemy.width / 2, enemy.height / 4);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+
+          // Sub HP bar indicators and overlays still render beautifully over the PNG
+          ctx.restore();
+          ctx.save();
+          const subBarWidth = 32;
+          const subBarHeight = 3;
+          const subHpPercent = enemy.hp / enemy.maxHp;
+          ctx.fillStyle = '#374151';
+          ctx.fillRect(enemy.x - subBarWidth / 2, enemy.y + enemy.height / 2 + 8, subBarWidth, subBarHeight);
+          ctx.fillStyle = '#e11d48';
+          ctx.fillRect(enemy.x - subBarWidth / 2, enemy.y + enemy.height / 2 + 8, subBarWidth * subHpPercent, subBarHeight);
         } else if (enemy.type === 'boss') {
           // Boss design - huge mothership
           ctx.beginPath();
